@@ -1,0 +1,26 @@
+#!/bin/bash
+# Clone a GitHub repository using `owner/repo` format
+
+OPTIONS=()
+for var in "$@"; do
+    case "${var}" in
+    --)
+        OPTIONS+=("${var}")
+        break
+        ;;
+    -*)
+        OPTIONS+=("${var}")
+        ;;
+    *)
+        break
+        ;;
+    esac
+done
+shift ${#OPTIONS[@]}
+
+if [[ -z "$1" ]]; then
+    echo 'USAGE: git-ghclone [options] owner/repo [dest]' >&2
+    exit 2;
+fi
+
+exec git clone "${OPTIONS[@]}" git@github.com:"$1" "${@:2}"
