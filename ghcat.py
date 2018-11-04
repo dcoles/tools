@@ -1,0 +1,46 @@
+#!/usr/bin/env python
+
+"""Get the contents of a file on GitHub."""
+
+import argparse
+import base64
+import posixpath
+
+from utils import get_userpass
+
+import requests
+
+GH_API = 'https://api.github.com'
+
+
+def cat(path, auth):
+    parts = path.split('/')
+    owner, repo = parts[0], parts[1]
+    path = posixpath.normpath(posixpath.join('/', *parts[2:]))
+
+    url = '{}/repos/{}/{}/contents'.format(GH_API, owner, repo) + path
+    headers = {'Accept': 'application/vnd.github.v3.object'}
+    resp = requests.get(url, headers=headers, auth=auth)
+    resp.raise_for_status()
+
+    data = resp.json()
+    type_ = data['type']
+    if type_ != "file":
+        raise ValueError('Unsupported type: {}'.format(type_))
+
+    return base64.b64decode(data['content'])
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-u', '--user')
+    parser.add_argument('path')
+    args = parser.parse_args()
+
+    auth = get_userpass(args.user) if args.user else None
+
+    print(cat(args.path, auth=auth))
+
+
+if __name__ == '__main__':
+    main()

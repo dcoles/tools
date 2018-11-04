@@ -6,8 +6,9 @@ from __future__ import print_function
 
 import argparse
 from collections import OrderedDict
-import getpass
 from os.path import basename
+
+from utils import get_userpass
 
 import requests
 
@@ -22,15 +23,6 @@ def post_gist(files, description=None, public=None, auth=None):
     resp.raise_for_status()
 
     return resp.json()
-
-
-def get_userpass(user):
-    try:
-        user, passwd = user.split(':', 1)
-    except ValueError:
-        user, passwd = user, getpass.getpass()
-
-    return user, passwd
 
 
 def main():
