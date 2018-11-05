@@ -1,0 +1,73 @@
+#!/bin/bash
+# Simple chroot script using mount namespaces.
+
+set -e
+
+if [[ $EUID != 0 ]]; then
+    echo 'ERROR: Must be run as root' >&2
+    exit 1
+fi
+
+if [[ "$1" != "--__stage2__" ]]; then
+    exec unshare --ipc --mount --pid --uts --fork "$0" --__stage2__ "${@}"
+fi
+shift
+
+while getopts :b:Rh opt; do
+    case "${opt}" in
+        R)
+            READONLY=1
+            ;;
+        h)
+            echo 'USAGE: choot [options] root [cmd [args...]]' >&2
+            exit 2
+            ;;
+        \?)
+            echo "Invalid option: -${OPTARG}" >&2
+            exit 2
+            ;;
+        :)
+            echo "Option -${OPTARG} requies an argument" >&2
+            exit 2
+            ;;
+    esac
+done
+shift $((OPTIND-1))
+
+if [[ -z "$1" ]]; then
+    echo 'ERROR: Missing required root parameter'
+    exit 1
+fi
+
+# Mark everything as slave so we inherit changes from system
+mount --make-rslave /
+
+# Turn target into mountpoint
+mount --bind "$1" "$1"
+
+# Make read-only (if requested)
+if [[ -n "${READONLY}" ]]; then
+    mount --bind -o remount,ro "$1" "$1"
+fi
+
+# Mounts
+mount proc "$1/proc" -t proc
+mount sys "$1/sys" -t sysfs
+mount tmpfs "$1/dev" -t tmpfs -o mode=755,nosuid,strictatime
+mkdir "$1/dev/pts"
+mount devpts "$1/dev/pts" -t devpts
+mount tmpfs "$1/run" -t tmpfs -o mode=755,nosuid,nodev,strictatime
+
+# Devices
+mknod "$1/dev/null" c 1 3
+mknod "$1/dev/zero" c 1 5
+mknod "$1/dev/full" c 1 7
+mknod "$1/dev/random" c 1 8
+mknod "$1/dev/urandom" c 1 9
+mknod "$1/dev/tty" c 5 0
+mknod "$1/dev/ptmx" c 5 2
+
+# Enter the chroot
+cd "$1"
+mount --move "$1" /
+chroot . "${@:2}"
