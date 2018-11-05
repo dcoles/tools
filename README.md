@@ -1,10 +1,44 @@
 # Tools
 
+A collection of useful tools and short scripts that might make your day a little better.
+
+## choot
+
+Simple namespace-based chroot in Bash.
+
+### Usage
+
+```
+$ choot [-R] /path/to/sysroot [cmd [args...]]
+```
+
+If the `-R` option is given then the sysroot will be mounted read-only.
+
+If `cmd` is not given then runs `$SHELL -i` (default: `/bin/sh -i`), otherwise runs the provided command inside the sysroot.
+
+## ghcat
+
+Cat a file on GitHub.
+
+### Usage
+
+Cat a file:
+
+```
+$ ghcat owner/repo/path/in/repo.ext
+```
+
+Cat a private file:
+
+```
+$ ghcat -u username:password owner/repo/path/in/repo.ext
+```
+
 ## gist
 
 Create a GitHub gist from the command-line.
 
-## Usage
+### Usage
 
 Create a gist of one or more files:
 ```
@@ -31,4 +65,3 @@ Create a gist from STDIN:
 ```
 $ gist -u username -
 ```
-
