@@ -1,0 +1,5 @@
+#!/bin/sh
+# Passthrough script.
+# Mostly useful to allow pasting code snippets "as-is".
+
+exec "$@"
