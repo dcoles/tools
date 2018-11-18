@@ -13,8 +13,22 @@ if [[ "$1" != "--__stage2__" ]]; then
 fi
 shift
 
+BIND_SRC=()
+BIND_DST=()
 while getopts :b:Rh opt; do
     case "${opt}" in
+        b)
+            if [[ "${OPTARG}" =~ ^([^:]+):([^:]+)$ ]]; then
+                BIND_SRC+=("${BASH_REMATCH[1]}")
+                BIND_DST+=("${BASH_REMATCH[2]}")
+            elif [[ "${OPTARG}" =~ ^([^:]+)$ ]]; then
+                BIND_SRC+=("${BASH_REMATCH[1]}")
+                BIND_DST+=("${BASH_REMATCH[1]}")
+            else
+                echo Invalid bind value: ${OPTARG} >&2
+                exit 2
+            fi
+            ;;
         R)
             READONLY=1
             ;;
@@ -68,6 +82,11 @@ mknod -m 666 "${ROOT}/dev/random" c 1 8
 mknod -m 666 "${ROOT}/dev/urandom" c 1 9
 mknod -m 666 "${ROOT}/dev/tty" c 5 0
 mknod -m 666 "${ROOT}/dev/ptmx" c 5 2
+
+# Bind mounts
+for (( i=0; i<${#BIND_SRC[@]}; i++ )); do
+    mount --bind "${BIND_SRC[$i]}" "${ROOT}/${BIND_DST[$i]}"
+done
 
 # Enter the chroot
 cd "${ROOT}"
