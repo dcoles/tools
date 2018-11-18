@@ -83,6 +83,11 @@ mknod -m 666 "${ROOT}/dev/urandom" c 1 9
 mknod -m 666 "${ROOT}/dev/tty" c 5 0
 mknod -m 666 "${ROOT}/dev/ptmx" c 5 2
 
+ln -s /proc/self/fd "${ROOT}/dev/fd"
+ln -s /proc/self/fd/0 "${ROOT}/dev/stdin"
+ln -s /proc/self/fd/1 "${ROOT}/dev/stdout"
+ln -s /proc/self/fd/2 "${ROOT}/dev/stderr"
+
 # Bind mounts
 for (( i=0; i<${#BIND_SRC[@]}; i++ )); do
     mount --bind "${BIND_SRC[$i]}" "${ROOT}/${BIND_DST[$i]}"
