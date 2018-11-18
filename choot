@@ -3,6 +3,9 @@
 
 set -e
 
+SHELL=/bin/bash
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
 if [[ $EUID != 0 ]]; then
     echo 'ERROR: Must be run as root' >&2
     exit 1
@@ -93,7 +96,15 @@ for (( i=0; i<${#BIND_SRC[@]}; i++ )); do
     mount --bind "${BIND_SRC[$i]}" "${ROOT}/${BIND_DST[$i]}"
 done
 
+# Environment
+ENV=(
+    HOME=/root
+    SHELL="${SHELL}"
+    PATH="${PATH}"
+    TERM="${TERM}"
+)
+
 # Enter the chroot
 cd "${ROOT}"
 mount --move "${ROOT}" /
-chroot . "${@:2}"
+env - "${ENV[@]}" chroot . "${@:2}"
