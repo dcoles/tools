@@ -4,13 +4,14 @@
 
 import argparse
 import base64
+import os
 import posixpath
 
 from utils import get_userpass
 
 import requests
 
-GH_API = 'https://api.github.com'
+GITHUB_API = os.getenv('GITHUB_API', 'https://api.github.com')
 
 
 def cat(path, auth):
@@ -18,7 +19,7 @@ def cat(path, auth):
     owner, repo = parts[0], parts[1]
     path = posixpath.normpath(posixpath.join('/', *parts[2:]))
 
-    url = '{}/repos/{}/{}/contents'.format(GH_API, owner, repo) + path
+    url = '{}/repos/{}/{}/contents'.format(GITHUB_API, owner, repo) + path
     headers = {'Accept': 'application/vnd.github.v3.object'}
     resp = requests.get(url, headers=headers, auth=auth)
     resp.raise_for_status()
