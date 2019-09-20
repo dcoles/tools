@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """Post GitHub Gists."""
 
@@ -7,10 +7,14 @@ from __future__ import print_function
 import argparse
 from collections import OrderedDict
 from os.path import basename
+import os
+from urllib.parse import urljoin
 
 from utils import get_userpass
 
 import requests
+
+GITHUB_API = os.getenv('GITHUB_API', 'https://api.github.com')
 
 
 def post_gist(files, description=None, public=None, auth=None):
@@ -19,7 +23,7 @@ def post_gist(files, description=None, public=None, auth=None):
         data['description'] = description
     if public is not None:
         data['public'] = public
-    resp = requests.post('https://api.github.com/gists', json=data, auth=auth)
+    resp = requests.post(urljoin(GITHUB_API, '/gists'), json=data, auth=auth)
     resp.raise_for_status()
 
     return resp.json()
