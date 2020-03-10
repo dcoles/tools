@@ -1,14 +1,27 @@
 #!/bin/bash
-# Prune stale remote Git branches
+# Prune state merged branches from Git remote
 set -e -u
 
 REMOTE=origin
 AGE='6 months ago'
 STALE="$(date -d "${AGE}" +%s)"
+DRY=0
 
-echo >&2 "Pruning branches from '${REMOTE}' last touched more than ${AGE}"
+for arg in "$@"; do
+    case "${arg}" in
+        -n|--dry-run)
+            DRY=1
+            ;;
+        -*)
+            echo >&2 "Unknown flag ${arg}"
+            exit 2
+            ;;
+    esac
+done
+
+echo >&2 "Pruning merged branches from '${REMOTE}' last touched more than ${AGE}"
 git fetch --prune "${REMOTE}"
-readarray -t BRANCHES < <(git branch --format '%(committerdate:unix) %(refname:lstrip=3)' --sort=committerdate --remote --merged "${REMOTE}")
+readarray -t BRANCHES < <(git branch --format '%(committerdate:unix) %(refname:lstrip=3)' --sort=committerdate --remote --merged "${REMOTE}/master")
 
 STALE_BRANCHES=()
 for branch in "${BRANCHES[@]}"; do
@@ -20,12 +33,22 @@ for branch in "${BRANCHES[@]}"; do
         continue
     fi
 
-    if [[ "${T}" -lt "${STALE}" ]]; then
-        echo >&2 "Branch ${REMOTE}/${B} is stale"
-        STALE_BRANCHES+=("${B}")
-    else
+    if [[ "${T}" -gt "${STALE}" ]]; then
+        # Since this is sorted, we can bail out now
         break
     fi
+
+    STALE_BRANCHES+=("${B}")
 done
 
-git push --delete -- "${REMOTE}" "${STALE_BRANCHES[@]}"
+if [[ "${#STALE_BRANCHES[@]}" -eq 0 ]]; then
+    echo >&2 'No branches to delete'
+    exit 0
+fi
+
+if [[ "${DRY}" -ne 0 ]]; then
+    echo >&2 'NOTE: Dry run (not actually deleting branches)'
+    git push --dry-run --delete -- "${REMOTE}" "${STALE_BRANCHES[@]}"
+else
+    git push --delete -- "${REMOTE}" "${STALE_BRANCHES[@]}"
+fi
