@@ -1,0 +1,31 @@
+#!/bin/bash
+# Prune stale remote Git branches
+set -e -u
+
+REMOTE=origin
+AGE='6 months ago'
+STALE="$(date -d "${AGE}" +%s)"
+
+echo >&2 "Pruning branches from '${REMOTE}' last touched more than ${AGE}"
+git fetch --prune "${REMOTE}"
+readarray -t BRANCHES < <(git branch --format '%(committerdate:unix) %(refname:lstrip=3)' --sort=committerdate --remote --merged "${REMOTE}")
+
+STALE_BRANCHES=()
+for branch in "${BRANCHES[@]}"; do
+    T="$(cut -d ' ' -f 1 <<<"${branch}")"
+    B="$(cut -d ' ' -f 2 <<<"${branch}")"
+
+    if [[ "${B}" =~ master|HEAD ]]; then
+        echo >&2 "Skipping ${REMOTE}/${B}"
+        continue
+    fi
+
+    if [[ "${T}" -lt "${STALE}" ]]; then
+        echo >&2 "Branch ${REMOTE}/${B} is stale"
+        STALE_BRANCHES+=("${B}")
+    else
+        break
+    fi
+done
+
+git push --delete -- "${REMOTE}" "${STALE_BRANCHES[@]}"
