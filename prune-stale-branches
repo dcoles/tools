@@ -38,7 +38,7 @@ for branch in "${BRANCHES[@]}"; do
         break
     fi
 
-    STALE_BRANCHES+=("${B}")
+    STALE_BRANCHES+=(refs/heads/"${B}")
 done
 
 if [[ "${#STALE_BRANCHES[@]}" -eq 0 ]]; then
