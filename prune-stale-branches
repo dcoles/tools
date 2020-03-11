@@ -5,12 +5,12 @@ set -e -u
 REMOTE=origin
 AGE='6 months ago'
 STALE="$(date -d "${AGE}" +%s)"
-DRY=0
+DELETE=0
 
 for arg in "$@"; do
     case "${arg}" in
-        -n|--dry-run)
-            DRY=1
+        --delete)
+            DELETE=1
             ;;
         -*)
             echo >&2 "Unknown flag ${arg}"
@@ -46,9 +46,9 @@ if [[ "${#STALE_BRANCHES[@]}" -eq 0 ]]; then
     exit 0
 fi
 
-if [[ "${DRY}" -ne 0 ]]; then
+if [[ "${DELETE}" -ne 0 ]]; then
+    git push --delete -- "${REMOTE}" "${STALE_BRANCHES[@]}"
+else
     echo >&2 'NOTE: Dry run (not actually deleting branches)'
     git push --dry-run --delete -- "${REMOTE}" "${STALE_BRANCHES[@]}"
-else
-    git push --delete -- "${REMOTE}" "${STALE_BRANCHES[@]}"
 fi
