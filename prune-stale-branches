@@ -28,13 +28,20 @@ for branch in "${BRANCHES[@]}"; do
     T="$(cut -d ' ' -f 1 <<<"${branch}")"
     B="$(cut -d ' ' -f 2 <<<"${branch}")"
 
-    if [[ "${B}" =~ master|HEAD ]]; then
+    # Ignore master and HEAD
+    if [[ "${B}" =~ ^(master|HEAD)$ ]]; then
+        echo >&2 "Skipping ${REMOTE}/${B}"
+        continue
+    fi
+
+    # Ignore anything that looks like a version number
+    if [[ "${B}" =~ [0-9]+[.][x0-9]+[.][x0-9]+ ]]; then
         echo >&2 "Skipping ${REMOTE}/${B}"
         continue
     fi
 
     if [[ "${T}" -gt "${STALE}" ]]; then
-        # Since this is sorted, we can bail out now
+        # The remainder of the branches are newer
         break
     fi
 
