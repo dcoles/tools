@@ -1,0 +1,25 @@
+#!/bin/bash
+# Run a command in parallel across multiple tmux panes
+
+if [[ $# -lt 1 ]]; then
+    echo >&2 "Usage: $0 <command> <instance1> <instance2> ..."
+    exit 2
+fi
+
+if test -z "${TMUX}"; then
+    echo >&2 "ERROR: Can't find active tmux session"
+    exit 1
+fi
+
+LINES="$(tmux display -p '#{window_height}')"
+PLINES=$(("${LINES}" / ($# - 1)))
+
+# Deliberately let this expand
+COMMAND=($1)
+
+ARGS=(new-window "${COMMAND[@]}" "$2")
+for IARG in "${@:3}"; do
+    ARGS+=(\; split-window -d -l "${PLINES}" "${COMMAND[@]}" "${IARG}")
+done
+
+exec tmux "${ARGS[@]}"
