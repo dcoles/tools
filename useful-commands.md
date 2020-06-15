@@ -15,3 +15,9 @@ ffmpeg -framerate 12 -i frame%04d.png \
 ```bash
 ffmpeg -framerate 12 -i frame%04d.png -s 85x85 -loop 0 animated.webp
 ```
+
+## Making an M4V
+
+```bash
+ffmpeg -framerate 12 -i frame%04d.png -s 480x258 -crf 18 -pix_fmt yuv420p animated.m4v
+```
