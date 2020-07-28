@@ -4,31 +4,208 @@ import argparse
 import datetime
 import json
 import re
+import sys
 
-INFO = '=='
-SEND = '=>'
-RECV = '<='
-LINE = re.compile(r'(\d{2}:\d{2}:\d{2}.\d{6}) ([<=>]{2}) (.*)')
-
-
-def parse_timestamp(s):
-    # This timestamp is local time with no date
-    return datetime.datetime.strptime(s, '%H:%M:%S.%f').replace(year=2020)
+from typing import *
 
 
 def format_timestamp(t):
     return f'{t:%Y-%m-%dT%H:%M:%S.%f}Z'  # FIXME: Not actually UTC
 
 
-def print_tdelta(tref, t, msg, *args):
-    delta = t - tref
-    delta_ms = delta.total_seconds() * 1000
-    print(f'{t.time()} ({delta_ms} ms)', msg % args)
+def tdelta(start: datetime.datetime, end: datetime.datetime) -> float:
+    """
+    Calculate time difference between two timestamps.
 
-
-def tdelta(start, end):
+    :param start: Start time
+    :param end: End time
+    :return: Time delta in milliseconds
+    """
     delta = end - start
     return round(delta.total_seconds() * 1000, 3)
+
+
+class CurlTraceParser:
+    INFO = '=='
+    SEND = '=>'
+    RECV = '<='
+
+    TIMESTAMP_FORMAT = '%H:%M:%S.%f'
+    LOG_RE = re.compile(r'(\d{2}:\d{2}:\d{2}.\d{6}) ([<=>]{2}) (.*)')
+    CONNECTED_TO_RE = re.compile(r'Info: Connected to (\S+) \(([^)]+)\) port (\d+) \(#(\d+)\)')
+
+    def __init__(self):
+        self._timing = {}
+        self._connection = None  # Current connection
+        self._requests = []
+        self._last_timestamp = None
+
+    @property
+    def _current_request(self):
+        return self._requests[-1]
+
+    @property
+    def t_start(self) -> Optional[datetime.datetime]:
+        return self._timing.get('start')
+
+    @t_start.setter
+    def t_start(self, timestamp: datetime.datetime):
+        self._timing['start'] = timestamp
+
+    @property
+    def t_tcp_connected(self) -> Optional[datetime.datetime]:
+        return self._timing.get('tcp_connected')
+
+    @t_tcp_connected.setter
+    def t_tcp_connected(self, timestamp: datetime.datetime):
+        self._timing['tcp_connected'] = timestamp
+
+    @property
+    def t_ssl_connected(self) -> Optional[datetime.datetime]:
+        return self._timing.get('ssl_connected')
+
+    @t_ssl_connected.setter
+    def t_ssl_connected(self, timestamp: datetime.datetime):
+        self._timing['ssl_connected'] = timestamp
+
+    @property
+    def t_close(self) -> Optional[datetime.datetime]:
+        return self._timing.get('close')
+
+    @t_close.setter
+    def t_close(self, timestamp: datetime.datetime):
+        self._timing['close'] = timestamp
+
+    def parse_line(self, line):
+        line = line.strip()
+        m = self.LOG_RE.fullmatch(line)
+        if m:
+            self._last_timestamp = self._parse_timestamp(m.group(1))
+            direction = m.group(2)
+            text = m.group(3)
+
+            self._log(direction, text)
+
+    def _parse_timestamp(self, s) -> datetime:
+        # This timestamp is local time with no date
+        # Force year to 2000, since 1960 breaks Chrome DevTools
+        return datetime.datetime.strptime(s, self.TIMESTAMP_FORMAT).replace(year=2000)
+
+    def _log(self, direction: str, text: str):
+        if not self.t_start:
+            self.t_start = self._last_timestamp
+
+        if direction == self.INFO:
+            if not self.t_tcp_connected and text.startswith('Info: Connected to'):
+                m = self.CONNECTED_TO_RE.fullmatch(text)
+                if m:
+                    self._connection = {
+                        'hostname': m.group(1),
+                        'server_ip': m.group(2),
+                        'server_port': m.group(3),
+                        'id': m.group(4),
+                    }
+                self.t_tcp_connected = self._last_timestamp
+            elif not self.t_ssl_connected and text.startswith('Info: SSL connection'):
+                self.t_ssl_connected = self._last_timestamp
+            elif not self.t_close not in self._timing and text.startswith('Info: Closing connection'):
+                self._connection['close'] = self._last_timestamp
+                self.t_close = self._last_timestamp
+
+        elif direction == self.SEND:
+            if text.startswith('Send header'):
+                self._requests.append({
+                    'started': self._last_timestamp,
+                    'connection': self._connection,
+                })
+
+        elif direction == self.RECV:
+            if text.startswith('Recv header'):
+                if 'firstbyte' not in self._current_request:
+                    self._current_request['firstbyte'] = self._last_timestamp
+
+                self._current_request['lastbyte'] = self._last_timestamp
+            elif text.startswith('Recv data'):
+                self._current_request['lastbyte'] = self._last_timestamp
+
+    def generate_har(self) -> dict:
+        """
+        Generate HTTP Archive 1.2 from this trace.
+
+        Spec: http://www.softwareishard.com/blog/har-12-spec/
+        """
+        entries = []
+        for n, r in enumerate(self._requests):
+            connection = r['connection']
+            entries.append({
+                'startedDateTime': format_timestamp(self.t_start if n == 0 else r['started']),
+                'time': tdelta(self.t_start if n == 0 else r['started'], r['lastbyte']),
+                'request': {
+                    'method': 'GET',  # FIXME
+                    'url': f'curl://request/{n + 1}',  # FIXME
+                    'httpVersion': 'HTTP/1.1',  # FIXME
+                    'cookies': [],
+                    'headers': [],
+                    'queryString': [],
+                    # 'postData': [],
+                    'headersSize': -1,
+                    'bodySize': -1,
+                    # 'comment': '',
+                },
+                'response': {
+                    'status': 200,  # FIXME
+                    'statusText': 'OK',  # FIXME
+                    'httpVersion': 'HTTP/1.1',  # FIXME
+                    'cookies': [],
+                    'headers': [],
+                    'content': {
+                        'size': -1,
+                        # 'compression': 0,
+                        'mimeType': '',
+                        # 'text': '',
+                        # 'encoding': 'base64',
+                        # 'comment': '',
+                    },
+                    'redirectURL': '',
+                    'headersSize': -1,
+                    'bodySize': -1,
+                    # 'comment': '',
+                },
+                'cache': {
+                    # 'beforeRequest': {},
+                    # 'afterRequest': {},
+                    # 'comment': '',
+                },
+                'timings': {
+                    'blocked': 0.000001,  # basically zero (Required to make Google DevTools happy)
+                    'dns': -1,
+                    'connect': tdelta(self.t_start, self.t_ssl_connected) if n == 0 else -1,
+                    'send': 0.0,
+                    'wait': tdelta(r['started'], r['firstbyte']),
+                    'receive': tdelta(r['firstbyte'], r['lastbyte']),
+                    'ssl': tdelta(self.t_tcp_connected, self.t_ssl_connected) if n == 0 else -1,
+                    # 'comment': '',
+                },
+                'serverIPAddress': connection['server_ip'],
+                'connection': connection['id'],
+                # 'comment': '',
+            })
+
+        har = {
+            'log': {
+                'version': '1.2',
+                'creator': {
+                    'name': 'curl2har',
+                    'version': 'dev',
+                },
+                # 'browser': {},
+                'pages': [],
+                'entries': entries,
+                # 'comment': '',
+            }
+        }
+
+        return har
 
 
 def main():
@@ -36,130 +213,17 @@ def main():
     argparser.add_argument('file')
     args = argparser.parse_args()
 
-    t_start = None
-    t_tcp_connected = None
-    t_ssl_connected = None
-    t_close = None
-
-    hostname = None
-    ip = None
-    port = None
-    connection = None
-
-    requests = []
+    parser = CurlTraceParser()
 
     with open(args.file) as f:
         for line in f:
-            line = line.strip()
-            m = LINE.fullmatch(line)
-            if not m:
-                continue
+            parser.parse_line(line)
 
-            timestamp = parse_timestamp(m.group(1))
-            direction = m.group(2)
-            text = m.group(3)
+    if not parser.t_start:
+        print('Could not parse trace: No timestamps found', file=sys.stderr)
+        sys.exit(1)
 
-            if not t_start and timestamp:
-                t_start = timestamp
-
-            if direction == INFO:
-                if not t_tcp_connected and text.startswith('Info: Connected to'):
-                    m = re.fullmatch(r'Info: Connected to (\S+) \(([^)]+)\) port (\d+) \(#(\d+)\)', text)
-                    #hostname = m.group(1)
-                    ip = m.group(2)
-                    #port = m.group(3)
-                    connection = m.group(4)
-                    t_tcp_connected = timestamp
-                elif not t_ssl_connected and text.startswith('Info: SSL connection'):
-                    t_ssl_connected = timestamp
-                elif not t_close and text.startswith('Info: Closing connection'):
-                    t_close = timestamp
-            elif direction == SEND:
-                if text.startswith('Send header'):
-                    requests.append({
-                        'started': timestamp,
-                        'connection': connection,
-                        'serverIPAddress': ip,
-                    })
-            elif direction == RECV:
-                if text.startswith('Recv header'):
-                    if 'firstbyte' not in requests[-1]:
-                        requests[-1]['firstbyte'] = timestamp
-                elif direction == RECV and text.startswith('Recv data'):
-                    requests[-1]['lastbyte'] = timestamp
-
-
-    entries = []
-    for n, r in enumerate(requests):
-        entries.append({
-            'startedDateTime': format_timestamp(t_start if n == 0 else r['started']),
-            'time': tdelta(t_start if n == 0 else r['started'], r['lastbyte']),
-            'request': {
-                'method': 'GET',  # FIXME
-                'url': f'curl://request/{n + 1}',  # FIXME
-                'httpVersion': 'HTTP/1.1',  # FIXME
-                'cookies': [],
-                'headers': [],
-                'queryString': [],
-                #'postData': [],
-                'headersSize': -1,
-                'bodySize': -1,
-                #'comment': '',
-            },
-            'response': {
-                'status': 200,  # FIXME
-                'statusText': 'OK',  # FIXME
-                'httpVersion': 'HTTP/1.1',  # FIXME
-                'cookies': [],
-                'headers': [],
-                'content': {
-                    'size': -1,
-                    #'compression': 0,
-                    'mimeType': '',
-                    #'text': '',
-                    #'encoding': 'base64',
-                    #'comment': '',
-                },
-                'redirectURL': '',
-                'headersSize': -1,
-                'bodySize': -1,
-                #'comment': '',
-            },
-            'cache': {
-                #'beforeRequest': {},
-                #'afterRequest': {},
-                #'comment': '',
-            },
-            'timings': {
-                'blocked': 0.000001,  # basically zero
-                'dns': -1,
-                'connect': tdelta(t_start, t_ssl_connected) if n == 0 else -1,
-                'send': 0.0,
-                'wait': tdelta(r['started'], r['firstbyte']),
-                'receive': tdelta(r['firstbyte'], r['lastbyte']),
-                'ssl': tdelta(t_tcp_connected, t_ssl_connected) if n == 0 else -1,
-                #'comment': '',
-            },
-            'serverIPAddress': r['serverIPAddress'],
-            'connection': r['connection'],
-            #'comment': '',
-        })
-
-    har = {
-        'log': {
-            'version': '1.2',
-            'creator': {
-                'name': 'curl2har',
-                'version': 'dev',
-            },
-            #'browser': {},
-            'pages': [],
-            'entries': entries,
-            #'comment': '',
-        }
-    }
-
-    print(json.dumps(har))
+    print(json.dumps(parser.generate_har()))
 
 
 if __name__ == '__main__':
