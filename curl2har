@@ -53,6 +53,14 @@ class CurlTraceParser:
         self._timing['start'] = timestamp
 
     @property
+    def t_dns(self) -> Optional[datetime.datetime]:
+        return self._timing.get('dns')
+
+    @t_dns.setter
+    def t_dns(self, timestamp: datetime.datetime):
+        self._timing['dns'] = timestamp
+
+    @property
     def t_tcp_connected(self) -> Optional[datetime.datetime]:
         return self._timing.get('tcp_connected')
 
@@ -96,7 +104,9 @@ class CurlTraceParser:
             self.t_start = self._last_timestamp
 
         if direction == self.INFO:
-            if not self.t_tcp_connected and text.startswith('Info: Connected to'):
+            if not self.t_dns and text.startswith('Info: a DOH request is completed, 0 to go'):
+                self.t_dns = self._last_timestamp
+            elif not self.t_tcp_connected and text.startswith('Info: Connected to'):
                 m = self.CONNECTED_TO_RE.fullmatch(text)
                 if m:
                     self._connection = {
@@ -178,7 +188,7 @@ class CurlTraceParser:
                 },
                 'timings': {
                     'blocked': 0.000001,  # basically zero (Required to make Google DevTools happy)
-                    'dns': -1,
+                    'dns': tdelta(self.t_start, self.t_dns) if self.t_dns and n == 0 else -1,
                     'connect': tdelta(self.t_start, self.t_ssl_connected) if n == 0 else -1,
                     'send': 0.0,
                     'wait': tdelta(r['started'], r['firstbyte']),
