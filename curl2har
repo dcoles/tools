@@ -1,0 +1,166 @@
+#!/usr/bin/python3
+# Convert output from `curl --trace-time --trace FILENAME URL` to `.har`
+import argparse
+import datetime
+import json
+import re
+
+INFO = '=='
+SEND = '=>'
+RECV = '<='
+LINE = re.compile(r'(\d{2}:\d{2}:\d{2}.\d{6}) ([<=>]{2}) (.*)')
+
+
+def parse_timestamp(s):
+    # This timestamp is local time with no date
+    return datetime.datetime.strptime(s, '%H:%M:%S.%f').replace(year=2020)
+
+
+def format_timestamp(t):
+    return f'{t:%Y-%m-%dT%H:%M:%S.%f}Z'  # FIXME: Not actually UTC
+
+
+def print_tdelta(tref, t, msg, *args):
+    delta = t - tref
+    delta_ms = delta.total_seconds() * 1000
+    print(f'{t.time()} ({delta_ms} ms)', msg % args)
+
+
+def tdelta(start, end):
+    delta = end - start
+    return round(delta.total_seconds() * 1000, 3)
+
+
+def main():
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument('file')
+    args = argparser.parse_args()
+
+    t_start = None
+    t_tcp_connected = None
+    t_ssl_connected = None
+    t_close = None
+
+    hostname = None
+    ip = None
+    port = None
+    connection = None
+
+    requests = []
+
+    with open(args.file) as f:
+        for line in f:
+            line = line.strip()
+            m = LINE.fullmatch(line)
+            if not m:
+                continue
+
+            timestamp = parse_timestamp(m.group(1))
+            direction = m.group(2)
+            text = m.group(3)
+
+            if not t_start and timestamp:
+                t_start = timestamp
+
+            if direction == INFO:
+                if not t_tcp_connected and text.startswith('Info: Connected to'):
+                    m = re.fullmatch(r'Info: Connected to (\S+) \(([^)]+)\) port (\d+) \(#(\d+)\)', text)
+                    #hostname = m.group(1)
+                    ip = m.group(2)
+                    #port = m.group(3)
+                    connection = m.group(4)
+                    t_tcp_connected = timestamp
+                elif not t_ssl_connected and text.startswith('Info: SSL connection'):
+                    t_ssl_connected = timestamp
+                elif not t_close and text.startswith('Info: Closing connection'):
+                    t_close = timestamp
+            elif direction == SEND:
+                if text.startswith('Send header'):
+                    requests.append({
+                        'started': timestamp,
+                        'connection': connection,
+                        'serverIPAddress': ip,
+                    })
+            elif direction == RECV:
+                if text.startswith('Recv header'):
+                    if 'firstbyte' not in requests[-1]:
+                        requests[-1]['firstbyte'] = timestamp
+                elif direction == RECV and text.startswith('Recv data'):
+                    requests[-1]['lastbyte'] = timestamp
+
+
+    entries = []
+    for n, r in enumerate(requests):
+        entries.append({
+            'startedDateTime': format_timestamp(t_start if n == 0 else r['started']),
+            'time': tdelta(t_start if n == 0 else r['started'], r['lastbyte']),
+            'request': {
+                'method': 'GET',  # FIXME
+                'url': f'curl://request/{n + 1}',  # FIXME
+                'httpVersion': 'HTTP/1.1',  # FIXME
+                'cookies': [],
+                'headers': [],
+                'queryString': [],
+                #'postData': [],
+                'headersSize': -1,
+                'bodySize': -1,
+                #'comment': '',
+            },
+            'response': {
+                'status': 200,  # FIXME
+                'statusText': 'OK',  # FIXME
+                'httpVersion': 'HTTP/1.1',  # FIXME
+                'cookies': [],
+                'headers': [],
+                'content': {
+                    'size': -1,
+                    #'compression': 0,
+                    'mimeType': '',
+                    #'text': '',
+                    #'encoding': 'base64',
+                    #'comment': '',
+                },
+                'redirectURL': '',
+                'headersSize': -1,
+                'bodySize': -1,
+                #'comment': '',
+            },
+            'cache': {
+                #'beforeRequest': {},
+                #'afterRequest': {},
+                #'comment': '',
+            },
+            'timings': {
+                'blocked': 0.000001,  # basically zero
+                'dns': -1,
+                'connect': tdelta(t_start, t_ssl_connected) if n == 0 else -1,
+                'send': 0.0,
+                'wait': tdelta(r['started'], r['firstbyte']),
+                'receive': tdelta(r['firstbyte'], r['lastbyte']),
+                'ssl': tdelta(t_tcp_connected, t_ssl_connected) if n == 0 else -1,
+                #'comment': '',
+            },
+            'serverIPAddress': r['serverIPAddress'],
+            'connection': r['connection'],
+            #'comment': '',
+        })
+
+    har = {
+        'log': {
+            'version': '1.2',
+            'creator': {
+                'name': 'curl2har',
+                'version': 'dev',
+            },
+            #'browser': {},
+            'pages': [],
+            'entries': entries,
+            #'comment': '',
+        }
+    }
+
+    print(json.dumps(har))
+
+
+if __name__ == '__main__':
+    main()
