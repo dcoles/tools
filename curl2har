@@ -147,6 +147,19 @@ class CurlTraceParser:
         entries = []
         for n, r in enumerate(self._requests):
             connection = r['connection']
+            timings = {
+                'blocked': 0.000001,  # basically zero (Required to make Google DevTools happy)
+                'dns': tdelta(self.t_start, self.t_dns) if self.t_dns and n == 0 else -1,
+                'connect': tdelta(self.t_start, self.t_ssl_connected or self.t_tcp_connected) if n == 0 else -1,
+                'send': 0.0,
+                'wait': tdelta(r['started'], r['firstbyte']),
+                'receive': tdelta(r['firstbyte'], r['lastbyte']),
+                # 'comment': '',
+            }
+
+            if self.t_ssl_connected:
+                timings['ssl'] = tdelta(self.t_tcp_connected, self.t_ssl_connected) if n == 0 else -1
+
             entries.append({
                 'startedDateTime': format_timestamp(self.t_start if n == 0 else r['started']),
                 'time': tdelta(self.t_start if n == 0 else r['started'], r['lastbyte']),
@@ -186,16 +199,7 @@ class CurlTraceParser:
                     # 'afterRequest': {},
                     # 'comment': '',
                 },
-                'timings': {
-                    'blocked': 0.000001,  # basically zero (Required to make Google DevTools happy)
-                    'dns': tdelta(self.t_start, self.t_dns) if self.t_dns and n == 0 else -1,
-                    'connect': tdelta(self.t_start, self.t_ssl_connected) if n == 0 else -1,
-                    'send': 0.0,
-                    'wait': tdelta(r['started'], r['firstbyte']),
-                    'receive': tdelta(r['firstbyte'], r['lastbyte']),
-                    'ssl': tdelta(self.t_tcp_connected, self.t_ssl_connected) if n == 0 else -1,
-                    # 'comment': '',
-                },
+                'timings': timings,
                 'serverIPAddress': connection['server_ip'],
                 'connection': connection['id'],
                 # 'comment': '',
