@@ -1,5 +1,47 @@
 # Useful commands
 
+## Debugging
+
+### GDB debug symbols
+
+```gdb
+# May also require setting `safe-path`
+set debug-file-directory /path
+```
+
+### GDB backtrace
+
+```gdb
+bt; info proc; info sharedlib; info target; info registers; x/16i $pc; info threads; thread apply all bt
+```
+
+### Generate coredump
+
+```gdb
+generate-core-file
+```
+
+### Who sent SIGKILL
+
+```bash
+tpoint signal:signal_generate 'sig==9'
+```
+
+### Tracing `malloc` calls
+
+```bash
+ltrace -w 10 -l libc -e malloc -e free -p PID
+```
+
+## Text
+
+### Slicing by timestamp
+
+```bash
+sed -n '/2015-04-22 17:21:46/,/2015-04-22 17:21:50/p'
+```
+
+
 ## Certificates
 
 ### Converting `.p12` to `.pem`/`.key`
@@ -37,3 +79,28 @@ ffmpeg -framerate 12 -i frame%04d.png -s 85x85 -loop 0 animated.webp
 ```bash
 ffmpeg -framerate 12 -i frame%04d.png -s 480x258 -crf 18 -pix_fmt yuv420p animated.m4v
 ```
+
+
+# Linux
+
+## Add URI scheme handler
+
+```bash
+# Assuming SCHEME.desktop contains `MimeType=x-scheme-handler/SCHEME`
+xdg-mime default SCHEME.desktop x-scheme-handler/SCHEME
+```
+
+## Adding new device ID to Linux USB driver
+
+```bash
+echo '8086 10f5' > /sys/bus/usb/drivers/NAME/new_id
+```
+
+## SATA Secure Erase
+
+```bash
+hdparm -I  # Check disk is not frozen
+hdparm --user-master u --security-set-pass Eins /dev/sdX
+hdparm --user-master u --security-erase Eins /dev/sdX
+```
+
