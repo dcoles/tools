@@ -5,13 +5,18 @@ set -e
 
 SHELL=/bin/bash
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
+NS_NAME=test
 
 if [[ $EUID != 0 ]]; then
     exec sudo -- "$0" "$@"
 fi
 
 if [[ "$1" != "--__stage2__" ]]; then
-    exec unshare --ipc --mount --pid --uts --fork "$0" --__stage2__ "${@}"
+    mkdir /sys/kernel/security/apparmor/policy/namespaces/"${NS_NAME}"
+    trap 'rmdir /sys/kernel/security/apparmor/policy/namespaces/"${NS_NAME}"' EXIT
+
+    aa-exec -p ":${NS_NAME}:unconfined" -- unshare --ipc --mount --pid --uts --fork "$0" --__stage2__ "${@}"
+    exit
 fi
 shift
 
@@ -71,6 +76,7 @@ fi
 # Mounts
 mount proc "${ROOT}/proc" -t proc
 mount sys "${ROOT}/sys" -t sysfs
+mount securityfs "${ROOT}/sys/kernel/security" -t securityfs
 mount tmpfs "${ROOT}/dev" -t tmpfs -o mode=755,nosuid,strictatime
 mkdir "${ROOT}/dev/pts"
 mount devpts "${ROOT}/dev/pts" -t devpts
