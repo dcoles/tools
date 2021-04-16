@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+
+"""Clone all repositories of a GitHub user/organization"""
+
+import argparse
+import getpass
+import itertools
+import os
+import subprocess
+import sys
+from urllib.parse import urlsplit, urlunsplit
+
+import requests
+
+GITHUB_API = os.getenv('GITHUB_API', 'https://api.github.com')
+
+
+def url_add_auth(url, username, password):
+    """Add user/password auth to URL"""
+    u = urlsplit(url)
+    return urlunsplit((u.scheme, f'{username}:{password}@{u.netloc}', u.path, u.query, u.fragment))
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-u', '--user', default=getpass.getuser())
+    parser.add_argument('-F', '--skip-forks', action='store_true')
+    parser.add_argument('--bare', action='store_true')
+    parser.add_argument('--mirror', action='store_true')
+    parser.add_argument('owner')
+    args = parser.parse_args()
+
+    try:
+        username, password = args.user.split(':', 1)
+    except ValueError:
+        username, password = args.user, getpass.getpass()
+
+
+    with requests.Session() as s:
+        s.auth = (username, password)
+        s.headers = {'Accept': 'application/vnd.github.v3.object'}
+
+        next_page = f'{GITHUB_API}/users/{args.owner}/repos'
+        while next_page:
+            r = s.get(next_page)
+            r.raise_for_status()
+
+            repos = r.json()
+            rel_next = r.links.get('next')
+            next_page = rel_next['url'] if rel_next else None
+
+            for repo in repos:
+                name = repo['name']
+                clone_url = repo['clone_url']
+
+                if args.skip_forks and repo['fork']:
+                    print(f'Skipping fork {name}', file=sys.stderr)
+                    continue
+
+                clone_auth_url = url_add_auth(clone_url, username, password)
+
+                print(f'Cloning {name} from {clone_url}', file=sys.stderr)
+                try:
+                    git_args = []
+                    if args.bare:
+                        git_args.append('--bare')
+                    if args.mirror:
+                        git_args.append('--mirror')
+                    subprocess.run(['git', 'clone', *git_args, clone_auth_url], check=True)
+                except subprocess.CalledProcessError as e:
+                    print(f'ERROR: Failed to clone {name} from {clone_url}')
+                    sys.exit(e.returncode)
+
+
+if __name__ == '__main__':
+    main()
