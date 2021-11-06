@@ -64,8 +64,8 @@ openssl x509 -in cert.pem -noout -text
 
 ```bash
 ffmpeg -framerate 12 -i frame%04d.png \
-  -filter_complex "[1:v] palettegen=reserve_transparent=on:transparency_color=36393F [p]; [0:v][p] paletteuse" \
-  -s 85x85 -loop 0 animated.gif
+    -filter_complex "[0:v] fps=12,scale=w=640:h=-1,split [a][b];[a] palettegen=reserve_transparent=on:max_colors=32 [p]; [b][p] paletteuse" \
+    -loop 0 animated.gif
 ```
 
 ### Making an animated WebP
