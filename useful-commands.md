@@ -74,6 +74,12 @@ ffmpeg -framerate 12 -i frame%04d.png \
 ffmpeg -framerate 12 -i frame%04d.png -s 85x85 -loop 0 animated.webp
 ```
 
+### Making an animated WebM
+
+```bash
+ffmpeg -framerate 12 -i frame%04d.png -s 100x100 -pix_fmt yuva420p -c:v libvpx-vp9 -lossless 1 mow.webm
+```
+
 ### Making an M4V
 
 ```bash
